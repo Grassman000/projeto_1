@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulador de Fazenda</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #8B4513; /* Dirt brown background */
+            margin: 0;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .game-title {
+            font-family: 'Press Start 2P', cursive;
+            text-shadow: 2px 2px 0px #000;
+        }
+
+        .pixel-art {
+            image-rendering: pixelated;
+        }
+
+        /* Plot styles */
+        .plot {
+            width: 80px;
+            height: 80px;
+            background-color: #A0522D; /* Lighter dirt */
+            border: 2px solid #5C3A21;
+            border-radius: 8px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            transition: transform 0.1s, background-color 0.2s;
+            position: relative;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.3);
+        }
+
+        .plot:hover {
+            transform: scale(1.05);
+            background-color: #8B4513;
+        }
+
+        .plot.planted {
+            background-color: #654321;
+        }
+
+        .plot.ready {
+            background-color: #4CAF50;
+            animation: pulse-green 1.5s infinite;
+        }
+
+        @keyframes pulse-green {
+            0% { box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(76, 175, 80, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(76, 175, 80, 0); }
+        }
+
+        /* Crop Emoji Styles */
+        .crop-emoji {
+            font-size: 3rem;
+            user-select: none;
+            transition: transform 0.3s;
+        }
+        
+        /* Growth stages */
+        .stage-0 { transform: scale(0.3); opacity: 0.5; filter: grayscale(100%); }
+        .stage-1 { transform: scale(0.6); }
+        .stage-2 { transform: scale(0.8); }
+        .stage-3 { transform: scale(1.0); } /* Ready */
+
+        /* Seed Selector */
+        .seed-btn {
+            transition: all 0.2s;
+        }
+        .seed-btn.selected {
+            border-color: #FFD700;
+            background-color: rgba(255, 215, 0, 0.2);
+            box-shadow: 0 0 10px #FFD700;
+            transform: translateY(-2px);
+        }
+
+        /* Message Box */
+        #message-box {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 50;
+            pointer-events: none;
+            transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+            opacity: 0;
+        }
+
+        #message-box.show {
+            opacity: 1;
+            transform: translate(-50%, 10px);
+        }
+
+        /* Money Animation */
+        .money-popup {
+            position: absolute;
+            color: #FFD700;
+            font-weight: bold;
+            font-size: 1.2rem;
+            text-shadow: 1px 1px 0 #000;
+            pointer-events: none;
+            animation: float-up 1s forwards;
+            z-index: 10;
+        }
+
+        @keyframes float-up {
+            0% { transform: translateY(0); opacity: 1; }
+            100% { transform: translateY(-30px); opacity: 0; }
+        }
+    </style>
+</head>
+<body class="text-white selection:bg-green-300 selection:text-black">
+
+    <!-- Message Box for Alerts -->
+    <div id="message-box" class="bg-gray-800 border-2 border-yellow-400 text-yellow-400 px-6 py-3 rounded-lg shadow-xl font-bold">
+        Mensagem
+    </div>
+
+    <!-- Header / Top Bar -->
+    <header class="bg-green-800 p-4 shadow-md flex justify-between items-center z-10 border-b-4 border-green-900">
+        <h1 class="game-title text-2xl text-yellow-300">Minha Fazendinha</h1>
+        
+        <div class="flex space-x-6 bg-green-900 px-4 py-2 rounded-xl border border-green-700">
+            <div class="flex items-center space-x-2">
+                <span class="text-2xl">💰</span>
+                <span id="money-display" class="font-bold text-xl text-yellow-400 font-mono">100</span>
+            </div>
+            <div class="flex items-center space-x-2" title="Nível da Fazenda">
+                <span class="text-2xl">⭐</span>
+                <span id="level-display" class="font-bold text-xl text-blue-300 font-mono">1</span>
+            </div>
+            <div class="flex items-center space-x-2" title="Experiência">
+                <span class="text-xl">XP</span>
+                <div class="w-24 h-4 bg-gray-700 rounded-full overflow-hidden border border-gray-500">
+                    <div id="xp-bar" class="h-full bg-blue-500 transition-all duration-300" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Game Area -->
+    <main class="flex-1 flex overflow-hidden">
+        
+        <!-- Sidebar: Shop / Inventory -->
+        <aside class="w-64 bg-yellow-900 border-r-4 border-yellow-950 p-4 flex flex-col shadow-2xl z-10 overflow-y-auto">
+            <h2 class="text-xl font-bold mb-4 text-center text-orange-200 border-b border-orange-200/30 pb-2">Sementes & Loja</h2>
+            
+            <div id="seed-shop" class="space-y-3 flex-1">
+                <!-- Seeds will be injected here by JS -->
+            </div>
+
+            <div class="mt-4 pt-4 border-t border-yellow-700">
+                <h3 class="text-sm font-bold text-gray-300 mb-2">Instruções:</h3>
+                <ul class="text-xs text-gray-400 space-y-1">
+                    <li>1. Selecione uma semente.</li>
+                    <li>2. Clique na terra para plantar.</li>
+                    <li>3. Espere crescer.</li>
+                    <li>4. Clique para colher e lucrar!</li>
+                </ul>
+            </div>
+        </aside>
+
+        <!-- Farm Grid Area -->
+        <section class="flex-1 relative flex justify-center items-center overflow-auto p-4 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PHBhdGggZD0iTTAgMGg0MHY0MEgweiIgZmlsbD0iIzY1NDMyMSIvPjxwYXRoIGQ9Ik0wIDBoNDB2NDBIMHoiIGZpbGw9InVybCgjbWFjcm8pIi8+PGRlZnM+PHJhZGlhbEdyYWRpZW50IGlkPSJtYWNybyIgY3g9IjUwJSIgY3k9IjUwJSIgcj0iNTAlIj48c3RvcCBvZmZzZXQ9IjAlIiBzdG9wLWNvbG9yPSIjNWMzYTIxIiBzdG9wLW9wYWNpdHk9IjAuMSIvPjxzdG9wIG9mZnNldD0iMTAwJSIgc3RvcC1jb2xvcj0iIzU3M2IzZSIgc3RvcC1vcGFjaXR5PSIwLjMiLz48L3JhZGlhbEdyYWRpZW50PjwvZGVmcz48L3N2Zz4=')]">
+            
+            <!-- The Grid -->
+            <div id="farm-grid" class="grid grid-cols-5 gap-2 p-4 bg-yellow-950 rounded-xl shadow-2xl border-4 border-yellow-900">
+                <!-- Plots will be injected here -->
+            </div>
+
+        </section>
+    </main>
+
+    <script>
+        // --- Game Data & Configuration ---
+        const gameState = {
+            money: 100,
+            level: 1,
+            xp: 0,
+            xpToNextLevel: 50,
+            selectedSeedId: null,
+            gridSize: 5, // 5x5 grid
+            plots: [] // Array to hold plot data
+        };
+
+        const cropTypes = {
+            wheat: {
+                id: 'wheat', name: 'Trigo', emoji: '🌾',
+                cost: 10, sellPrice: 20,
+                growTime: 5000, // ms
+                unlockedAt: 1, xpReward: 5,
+                color: 'bg-yellow-200'
+            },
+            carrot: {
+                id: 'carrot', name: 'Cenoura', emoji: '🥕',
+                cost: 25, sellPrice: 55,
+                growTime: 8000,
+                unlockedAt: 1, xpReward: 10,
+                color: 'bg-orange-400'
+            },
+            tomato: {
+                id: 'tomato', name: 'Tomate', emoji: '🍅',
+                cost: 60, sellPrice: 140,
+                growTime: 12000,
+                unlockedAt: 2, xpReward: 20,
+                color: 'bg-red-500'
+            },
+            corn: {
+                id: 'corn', name: 'Milho', emoji: '🌽',
+                cost: 120, sellPrice: 300,
+                growTime: 18000,
+                unlockedAt: 3, xpReward: 35,
+                color: 'bg-yellow-400'
+            },
+            eggplant: {
+                id: 'eggplant', name: 'Berinjela', emoji: '🍆',
+                cost: 250, sellPrice: 650,
+                growTime: 25000,
+                unlockedAt: 4, xpReward: 60,
+                color: 'bg-purple-600'
+            },
+             melon: {
+                id: 'melon', name: 'Melancia', emoji: '🍉',
+                cost: 500, sellPrice: 1500,
+                growTime: 40000,
+                unlockedAt: 5, xpReward: 120,
+                color: 'bg-green-500'
+            }
+        };
+
+        // --- DOM Elements ---
+        const UI = {
+            moneyDisplay: document.getElementById('money-display'),
+            levelDisplay: document.getElementById('level-display'),
+            xpBar: document.getElementById('xp-bar'),
+            seedShop: document.getElementById('seed-shop'),
+            farmGrid: document.getElementById('farm-grid'),
+            messageBox: document.getElementById('message-box')
+        };
+
+        // --- Utility Functions ---
+        function showMessage(msg, isError = false) {
+            UI.messageBox.textContent = msg;
+            UI.messageBox.className = `bg-gray-800 border-2 px-6 py-3 rounded-lg shadow-xl font-bold ${isError ? 'border-red-500 text-red-500' : 'border-yellow-400 text-yellow-400'}`;
+            UI.messageBox.classList.add('show');
+            setTimeout(() => {
+                UI.messageBox.classList.remove('show');
+            }, 3000);
+        }
+
+        function formatMoney(amount) {
+            return amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+        }
+
+        function updateHUD() {
+            UI.moneyDisplay.textContent = formatMoney(gameState.money);
+            UI.levelDisplay.textContent = gameState.level;
+            
+            const xpPercent = Math.min(100, (gameState.xp / gameState.xpToNextLevel) * 100);
+            UI.xpBar.style.width = `${xpPercent}%`;
+        }
+
+        function addXP(amount) {
+            gameState.xp += amount;
+            if (gameState.xp >= gameState.xpToNextLevel) {
+                levelUp();
+            }
+            updateHUD();
+        }
+
+        function levelUp() {
+            gameState.level++;
+            gameState.xp -= gameState.xpToNextLevel;
+            gameState.xpToNextLevel = Math.floor(gameState.xpToNextLevel * 1.5);
+            showMessage(`Parabéns! Nível ${gameState.level} alcançado! 🎉`);
+            renderShop(); // Refresh shop to show newly unlocked crops
+        }
+
+        function showFloatingMoney(amount, x, y) {
+            const popup = document.createElement('div');
+            popup.className = 'money-popup';
+            popup.textContent = `+${amount}`;
+            popup.style.left = `${x}px`;
+            popup.style.top = `${y}px`;
+            document.body.appendChild(popup);
+            setTimeout(() => popup.remove(), 1000);
+        }
+
+        // --- Initialization ---
+        function renderShop() {
+            UI.seedShop.innerHTML = '';
+            
+            Object.values(cropTypes).forEach(crop => {
+                const isLocked = gameState.level < crop.unlockedAt;
+                
+                const btn = document.createElement('button');
+                btn.className = `seed-btn w-full text-left p-3 rounded-lg border-2 flex items-center justify-between group
+                    ${isLocked 
+                        ? 'bg-gray-800 border-gray-700 opacity-60 cursor-not-allowed' 
+                        : 'bg-yellow-800 border-yellow-700 hover:bg-yellow-700 hover:border-yellow-500'}`;
+                
+                if (!isLocked && gameState.selectedSeedId === crop.id) {
+                    btn.classList.add('selected');
+                }
+
+                btn.innerHTML = `
+                    <div class="flex items-center space-x-3">
+                        <div class="w-10 h-10 ${isLocked ? 'bg-gray-600' : crop.color} rounded flex items-center justify-center text-xl shadow-inner">
+                            ${isLocked ? '🔒' : crop.emoji}
+                        </div>
+                        <div>
+                            <div class="font-bold text-sm ${isLocked ? 'text-gray-400' : 'text-white'}">${crop.name}</div>
+                            ${isLocked 
+                                ? `<div class="text-xs text-red-400">Nível ${crop.unlockedAt}</div>`
+                                : `<div class="text-xs text-yellow-300">Custo: ${crop.cost}💰</div>`
+                            }
+                        </div>
+                    </div>
+                    ${!isLocked ? `
+                    <div class="text-right">
+                        <div class="text-xs text-green-400 font-bold">Venda: ${crop.sellPrice}</div>
+                        <div class="text-[10px] text-gray-300">⏱️ ${crop.growTime/1000}s</div>
+                    </div>
+                    ` : ''}
+                `;
+
+                if (!isLocked) {
+                    btn.onclick = () => selectSeed(crop.id);
+                } else {
+                    btn.onclick = () => showMessage(`Requer Nível ${crop.unlockedAt} para desbloquear.`, true);
+                }
+
+                UI.seedShop.appendChild(btn);
+            });
+        }
+
+        function selectSeed(seedId) {
+            gameState.selectedSeedId = seedId;
+            renderShop(); // Update selection visuals
+        }
+
+        function initGrid() {
+            UI.farmGrid.innerHTML = '';
+            gameState.plots = [];
+
+            const totalPlots = gameState.gridSize * gameState.gridSize;
+            
+            for (let i = 0; i < totalPlots; i++) {
+                const plotElement = document.createElement('div');
+                plotElement.className = 'plot';
+                plotElement.dataset.index = i;
+                
+                // Plot data object
+                const plotData = {
+                    element: plotElement,
+                    state: 'empty', // 'empty', 'growing', 'ready'
+                    cropId: null,
+                    plantTime: null,
+                    timerId: null
+                };
+                
+                gameState.plots.push(plotData);
+
+                plotElement.addEventListener('click', (e) => handlePlotClick(i, e));
+                UI.farmGrid.appendChild(plotElement);
+            }
+        }
+
+        // --- Interaction Logic ---
+        function handlePlotClick(index, event) {
+            const plot = gameState.plots[index];
+
+            if (plot.state === 'empty') {
+                plantCrop(plot);
+            } else if (plot.state === 'ready') {
+                harvestCrop(plot, event.clientX, event.clientY);
+            } else if (plot.state === 'growing') {
+                // Could show progress here in a future update
+                showMessage("A planta ainda está crescendo...");
+            }
+        }
+
+        function plantCrop(plot) {
+            if (!gameState.selectedSeedId) {
+                showMessage("Selecione uma semente na loja primeiro!", true);
+                return;
+            }
+
+            const crop = cropTypes[gameState.selectedSeedId];
+
+            if (gameState.money < crop.cost) {
+                showMessage("Dinheiro insuficiente!", true);
+                return;
+            }
+
+            // Deduct cost
+            gameState.money -= crop.cost;
+            updateHUD();
+
+            // Update plot state
+            plot.state = 'growing';
+            plot.cropId = crop.id;
+            plot.plantTime = Date.now();
+            plot.element.classList.add('planted');
+            
+            // Visual representation
+            plot.element.innerHTML = `<span class="crop-emoji stage-0">${crop.emoji}</span>`;
+
+            // Start growth cycle
+            growCrop(plot, crop);
+        }
+
+        function growCrop(plot, crop) {
+            const stageTime = crop.growTime / 3;
+            
+            // Clear any existing timer just in case
+            if(plot.timerId) clearTimeout(plot.timerId);
+
+            plot.timerId = setTimeout(() => {
+                // Stage 1
+                if (plot.state !== 'growing') return; // Cancel if state changed somehow
+                const emojiSpan = plot.element.querySelector('.crop-emoji');
+                if(emojiSpan) emojiSpan.className = 'crop-emoji stage-1';
+
+                plot.timerId = setTimeout(() => {
+                    // Stage 2
+                    if (plot.state !== 'growing') return;
+                    const emojiSpan = plot.element.querySelector('.crop-emoji');
+                    if(emojiSpan) emojiSpan.className = 'crop-emoji stage-2';
+
+                    plot.timerId = setTimeout(() => {
+                        // Ready (Stage 3)
+                        if (plot.state !== 'growing') return;
+                        
+                        plot.state = 'ready';
+                        plot.element.classList.remove('planted');
+                        plot.element.classList.add('ready');
+                        
+                        const emojiSpan = plot.element.querySelector('.crop-emoji');
+                        if(emojiSpan) emojiSpan.className = 'crop-emoji stage-3';
+                        
+                        // Optional: play a subtle sound or visual effect here
+                    }, stageTime);
+                }, stageTime);
+            }, stageTime);
+        }
+
+        function harvestCrop(plot, mouseX, mouseY) {
+            const crop = cropTypes[plot.cropId];
+            
+            // Add rewards
+            gameState.money += crop.sellPrice;
+            addXP(crop.xpReward);
+            updateHUD();
+            
+            // Visual feedback
+            showFloatingMoney(crop.sellPrice, mouseX, mouseY);
+
+            // Reset plot
+            plot.state = 'empty';
+            plot.cropId = null;
+            plot.plantTime = null;
+            plot.timerId = null;
+            plot.element.className = 'plot'; // Reset classes
+            plot.element.innerHTML = '';
+        }
+
+        // --- Start Game ---
+        window.onload = () => {
+            initGrid();
+            renderShop();
+            updateHUD();
+            
+            // Auto-select first seed
+            if(Object.keys(cropTypes).length > 0) {
+                selectSeed(Object.keys(cropTypes)[0]);
+            }
+        };
+
+    </script>
+</body>
+</html>
